@@ -1,1 +1,1 @@
-# zincSearch_mail_API
+# Mail search example with Go 
