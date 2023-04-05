@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"runtime/pprof"
 )
 
 type MailObj struct {
@@ -77,6 +78,20 @@ func main(){
 		return nil
 	}
 
+
+	//Profilling del programa, Se inicia la acción de perfilación en la parte critica del programa
+	profillingFile, err := os.Create("cpu.prof")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer profillingFile.Close()
+	err = pprof.StartCPUProfile(profillingFile);
+    if  err != nil {
+        log.Fatal(err)
+    }
+    defer pprof.StopCPUProfile()
+
+
 	// Ciclo en todas las carpetas dentro de la
 	folders, err := os.ReadDir(mailDir)
 	if err!=nil{
@@ -112,21 +127,6 @@ func main(){
 		body,_:= io.ReadAll(response.Body)
 		fmt.Println(string(body))
 	}
-
-	/*
-	debugFile, _ := os.OpenFile("debug.txt", os.O_WRONLY,0644)
-	defer debugFile.Close()
-	debugFile.Write([]byte(bulkJson))
-	*/
-
-	// Acá se hará la peticion para indexar el stream
-	// Se crea la petición
-	
-	
-
-
-	
-	
 }
 
 
