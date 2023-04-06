@@ -1,0 +1,13 @@
+{
+    "configurations": [
+    {
+        "name": "Indexer",
+        "type": "go",
+        "request": "launch",
+        "mode": "debug",
+        "program": "${file}",
+        "args" : ["enron_mail_20110402"]
+    }
+    ]
+    
+}

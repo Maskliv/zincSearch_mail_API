@@ -1,4 +1,5 @@
 enron_mail_20110402/**
-.vscode/**
 cpu.prof
 profile001.*
+bulkJson.ndjson
+indexer.exe
