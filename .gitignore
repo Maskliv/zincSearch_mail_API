@@ -1,5 +1,5 @@
-enron_mail_20110402/**
-cpu.prof
-profile001.*
-bulkJson.ndjson
-indexer.exe
+indexer/enron_mail_20110402/**
+indexer/cpu.prof
+
+indexer/bulkJson.ndjson
+indexer/indexer.exe

@@ -55,32 +55,23 @@ func main(){
 
 	//Profilling del programa, Se inicia la acción de perfilación en la parte critica del programa
 	profillingFile, err := os.Create("cpu.prof")
-    if err != nil {
-        log.Fatal(err)
-    }
+    handleError(err)
     defer profillingFile.Close()
 	
 	err = pprof.StartCPUProfile(profillingFile);
-    if  err != nil {
-        log.Fatal(err)
-    }
+    handleError(err)
     defer pprof.StopCPUProfile()
 
 
 	// Ciclo en todas las carpetas dentro de la
 	folders, err := os.ReadDir(mailDir)
-	if err!=nil{
-		log.Fatal(err)
-	}
-
+	handleError(err)
 	indexAll(folders) //Se indexan los datos de todas las carpetas
 }
 
 // Se define la funcion para indexar la carpeta de una persona
 func indexPersonFolder (path string, d fs.DirEntry, err error) error{
-	if (err != nil){
-		log.Fatal(err)
-	}
+	handleError(err)
 
 	// ya que la primera entrada de una funcion WalkDir es la ruta misma
 	// Se asegura que no se analice a si mismo si el directorio que lo contiene es maildir
@@ -91,9 +82,7 @@ func indexPersonFolder (path string, d fs.DirEntry, err error) error{
 	if (!d.IsDir()){
 		// Se lee el archivo y Se pasa a string 
 		mailFile,_err := os.Open(path)
-		if _err!=nil{
-			log.Fatal(err)
-		}
+		handleError(_err)
 		defer mailFile.Close()
 
 		//mailFile := readFileAsString(path)
@@ -113,25 +102,18 @@ func indexAll(folders []fs.DirEntry){
 		os.Create("bulkJson.ndjson")
 		// Se recorren los archhivos de cada carpeta
 		err := filepath.WalkDir(filepath.Join(mailDir,person), indexPersonFolder)
-		if err != nil{
-			log.Fatal(err)
-		}
-
+		handleError(err)
 		bulkJson := readFileAsString("bulkJson.ndjson")
 		// Se crea la petición
 		request, err := http.NewRequest("POST", url, strings.NewReader(bulkJson))
-		if err != nil {
-			log.Fatal(err)
-		}
+		handleError(err)
 		request.Header.Set("Authorization","Basic "+ authEncoded)
 		request.Header.Set("Content-Type", "application/json")
 
 		// Se instancia el cliente y se hace la petición a través del cliente
 		client := &http.Client{}
 		response, err := client.Do(request)
-		if err != nil {
-			log.Fatal(err)
-		}
+		handleError(err)
 		defer response.Body.Close()
 
 		// Se muestra la respuesta
@@ -143,9 +125,7 @@ func indexAll(folders []fs.DirEntry){
 func addMailToJson (mailFile *os.File) {
 	// Logica para agregar la informacion del mail al json
 	bulkJsonFile, err := os.OpenFile("bulkJson.ndjson", os.O_WRONLY|os.O_APPEND, 0644)
-	if err!=nil{
-		log.Fatal(err)
-	}
+	handleError(err)
 	defer bulkJsonFile.Close()
 	// Linea en la que acaba el header
 	headerEnd := 0
@@ -179,10 +159,9 @@ func addMailToJson (mailFile *os.File) {
 		}
         lineNumber++
     }
-    if err := scanner.Err(); err != nil {
-        log.Fatal(err)
-    }
 
+	err = scanner.Err()
+    handleError(err)
 	// Para leer el body 
 	body := ""
 	lineNumber = 1
@@ -194,20 +173,17 @@ func addMailToJson (mailFile *os.File) {
 		}
 		lineNumber ++
     }
-    if err := scanner.Err(); err != nil {
-        log.Fatal(err)
-    }
+	
+    err = scanner.Err()
+    handleError(err)
 
 	mailObj.Body = body
 
 	// Acá se transforma la structura mailObj a un objeto json para unirlo al json del stream
 	mailObjJson, err := json.Marshal(mailObj)
-	if (err != nil){
-		log.Fatal(err)
-	}
+	handleError(err)
 
-
-	_, err = bulkJsonFile.WriteString("{ \"index\" : { \"_index\" : \"enron_2\" } }\n"+string(mailObjJson)+"\n")
+	_, err = bulkJsonFile.WriteString("{ \"index\" : { \"_index\" : \"enron\" } }\n"+string(mailObjJson)+"\n")
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -223,4 +199,10 @@ func readFileAsString (fpath string) string {
 	}
 	// Se pasa a string 
 	return string(fileBytes)
+}
+
+func handleError (err error){
+	if err!=nil{
+		log.Fatal(err)
+	}
 }
