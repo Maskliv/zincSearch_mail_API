@@ -135,7 +135,7 @@ func addMailToJson (mailFile *os.File) {
 	// Se crea un scanner para leer el string linea por linea
 	scanner := bufio.NewScanner(mailFile)
 	// Se incrementa el tamaño del buffer de cada linea
-	scanner.Buffer(make([]byte, 0, 64*1024),1024*1024) 
+	scanner.Buffer(make([]byte, 0, 64*1024),bufio.MaxScanTokenSize) 
     lineNumber := 1 
     headerLoop : for scanner.Scan() { // Se pueden poner etiquetas en el codigo que buen detalle
         line := strings.Split(scanner.Text(), ": ")
@@ -165,16 +165,17 @@ func addMailToJson (mailFile *os.File) {
 	// Para leer el body 
 	body := ""
 	lineNumber = 1
-	scanner = bufio.NewScanner(mailFile)
-	scanner.Buffer(make([]byte, 0, 64*1024),1024*1024) 
-    for scanner.Scan() {
+	scanner2 := bufio.NewScanner(mailFile)
+	scanner2.Buffer(make([]byte, 0, 64*1024),bufio.MaxScanTokenSize)
+
+    for scanner2.Scan() {
 		if (lineNumber > headerEnd){
-        	body += scanner.Text() + "\n"
+        	body += scanner2.Text() + "\n"
 		}
 		lineNumber ++
     }
 	
-    err = scanner.Err()
+    err = scanner2.Err()
     handleError(err)
 
 	mailObj.Body = body
