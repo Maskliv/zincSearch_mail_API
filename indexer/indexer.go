@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"runtime/pprof"
+	"sync"
 )
 
 // Estrucutra de datos para indexar un correo
@@ -21,10 +22,10 @@ type MailObj struct {
 	Message_ID          string
 	Date                time.Time
 	From                string
-	To                  []string
+	To                  string
 	Subject             string
 	Body				string
-
+	Folder				string
 
 }
 
@@ -40,6 +41,9 @@ var authEncoded string
 //Directorios a analizar
 var enronMail string
 var mailDir string
+
+//Para administrar las rutinas
+var waitGroup sync.WaitGroup
 
 func main(){
 	if (len(os.Args)<= 1){
@@ -67,6 +71,50 @@ func main(){
 	folders, err := os.ReadDir(mailDir)
 	handleError(err)
 	indexAll(folders) //Se indexan los datos de todas las carpetas
+
+	waitGroup.Wait()
+	fmt.Println("Todas las operaciones terminadas con exito")
+}
+
+func indexAll(folders []fs.DirEntry){
+	for _,folder := range folders{
+		waitGroup.Add(1)
+		go folderRoutine(folder.Name())
+	}
+}
+
+func folderRoutine(folderName string){
+	// para marcar que la rutina ha terminado cuando termine la ejecución de la función
+	defer waitGroup.Done()
+
+	person := folderName
+	
+	//Se trunca o se crea el archivo que se usará para ingresar la informacion
+	os.Create(folderName+".ndjson")
+	// Se recorren los archhivos de cada carpeta
+	err := filepath.WalkDir(filepath.Join(mailDir,person), indexPersonFolder)
+	handleError(err)
+	bulkJson := readFileAsString(folderName+".ndjson")
+	// Se crea la petición
+	request, err := http.NewRequest("POST", url, strings.NewReader(bulkJson))
+	handleError(err)
+	request.Header.Set("Authorization","Basic "+ authEncoded)
+	request.Header.Set("Content-Type", "application/json")
+
+	// Se instancia el cliente y se hace la petición a través del cliente
+	client := &http.Client{}
+	response, err := client.Do(request)
+	handleError(err)
+	defer response.Body.Close()
+
+	// Se muestra la respuesta
+	body,_:= io.ReadAll(response.Body)
+	fmt.Println(string(body))
+	
+	err = os.Remove(folderName+".ndjson")
+	if err!=nil {
+		fmt.Printf("El archivo %s.ndjson no se ha podido eliminar\n", folderName)
+	}
 }
 
 // Se define la funcion para indexar la carpeta de una persona
@@ -88,56 +136,37 @@ func indexPersonFolder (path string, d fs.DirEntry, err error) error{
 		//mailFile := readFileAsString(path)
 
 		// Se agrega la informacion al json
-		addMailToJson(mailFile)
+		folderPerson := strings.Split(path, "\\")[2]
+		bulkJsonFile, err := os.OpenFile(folderPerson+".ndjson", os.O_WRONLY|os.O_APPEND, 0644)
+		handleError(err)
+		defer bulkJsonFile.Close()
+
+		addMailToJson(mailFile, bulkJsonFile)
 	}
 	// returns a slice for subDirs and a slice for files 
 	return nil
 }
 
-func indexAll(folders []fs.DirEntry){
-	for _,folder := range folders{
-		person := folder.Name()
-		
-		//Se trunca o se crea el archivo que se usará para ingresar la informacion
-		os.Create("bulkJson.ndjson")
-		// Se recorren los archhivos de cada carpeta
-		err := filepath.WalkDir(filepath.Join(mailDir,person), indexPersonFolder)
-		handleError(err)
-		bulkJson := readFileAsString("bulkJson.ndjson")
-		// Se crea la petición
-		request, err := http.NewRequest("POST", url, strings.NewReader(bulkJson))
-		handleError(err)
-		request.Header.Set("Authorization","Basic "+ authEncoded)
-		request.Header.Set("Content-Type", "application/json")
-
-		// Se instancia el cliente y se hace la petición a través del cliente
-		client := &http.Client{}
-		response, err := client.Do(request)
-		handleError(err)
-		defer response.Body.Close()
-
-		// Se muestra la respuesta
-		body,_:= io.ReadAll(response.Body)
-		fmt.Println(string(body))
-	}
-}
-
-func addMailToJson (mailFile *os.File) {
+func addMailToJson (mailFile *os.File, bulkJsonFile *os.File) {
 	// Logica para agregar la informacion del mail al json
-	bulkJsonFile, err := os.OpenFile("bulkJson.ndjson", os.O_WRONLY|os.O_APPEND, 0644)
-	handleError(err)
-	defer bulkJsonFile.Close()
 	// Linea en la que acaba el header
-	headerEnd := 0
-
+	headerEnd := false
 	//Se crea una estructura de datos para el mail
 	var mailObj MailObj
+	mailObj.To = ""
 	// Se crea un scanner para leer el string linea por linea
 	scanner := bufio.NewScanner(mailFile)
 	// Se incrementa el tamaño del buffer de cada linea
-	scanner.Buffer(make([]byte, 0, 64*1024),bufio.MaxScanTokenSize) 
-    lineNumber := 1 
-    headerLoop : for scanner.Scan() { // Se pueden poner etiquetas en el codigo que buen detalle
+	scanner.Buffer(make([]byte, 0, 64*1024),1024*1024) 
+
+	lineNumber := 1 
+	body:=""
+    for scanner.Scan() { // Se pueden poner etiquetas en el codigo que buen detalle
+		if (headerEnd){
+			body += scanner.Text() + "\n"
+			continue
+		}
+
         line := strings.Split(scanner.Text(), ": ")
         // Se asigna cada atributo respectivamente
 		switch(line[0]){
@@ -150,41 +179,35 @@ func addMailToJson (mailFile *os.File) {
 			case "From":
 				mailObj.From = line[1]
 			case "To":
-				mailObj.To = strings.Split(strings.ReplaceAll(line[1]," ",""), ",")
+				mailObj.To += line[1]
 			case "Subject":
 				mailObj.Subject = line[1]
 			case "X-FileName": // En el caso de este atributo se sabe que es el ultimo del header y por lo tanto la ultima linea del mismo
-				headerEnd = lineNumber
-				break headerLoop // Se hace break al loop marcado con la etiqueta
+				headerEnd = true
+		}
+		if strings.Contains(line[0], "@"){
+			mailObj.To += line[0]
 		}
         lineNumber++
     }
 
-	err = scanner.Err()
-    handleError(err)
-	// Para leer el body 
-	body := ""
-	lineNumber = 1
-	scanner2 := bufio.NewScanner(mailFile)
-	scanner2.Buffer(make([]byte, 0, 64*1024),bufio.MaxScanTokenSize)
+	if err:=scanner.Err(); err!=nil{
+		log.Fatal(err)
+	}
 
-    for scanner2.Scan() {
-		if (lineNumber > headerEnd){
-        	body += scanner2.Text() + "\n"
-		}
-		lineNumber ++
-    }
-	
-    err = scanner2.Err()
-    handleError(err)
-
+	mailObj.To = strings.ReplaceAll(mailObj.To,"\t","")
 	mailObj.Body = body
+
+	// Get the absolute path of the file
+    absPath, err := filepath.Abs(mailFile.Name())
+    handleError(err)
+	mailObj.Folder = absPath
 
 	// Acá se transforma la structura mailObj a un objeto json para unirlo al json del stream
 	mailObjJson, err := json.Marshal(mailObj)
 	handleError(err)
 
-	_, err = bulkJsonFile.WriteString("{ \"index\" : { \"_index\" : \"enron\" } }\n"+string(mailObjJson)+"\n")
+	_, err = bulkJsonFile.WriteString("{ \"index\" : { \"_index\" : \"enron_3\" } }\n"+string(mailObjJson)+"\n")
 	if err != nil {
 		fmt.Println(err)
 		return
