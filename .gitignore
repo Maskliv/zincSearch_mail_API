@@ -1,6 +1,6 @@
 indexer/enron_mail_20110402/**
 indexer/cpu.prof
-
+*.exe
 *.json
 indexer/*.ndjson
 indexer/bulkJson.ndjson
