@@ -42,12 +42,8 @@ type Email struct {
 	From string `json:"from"`
 	MessageId string `json:"message_id"`
 	Subject string `json:"subject"`
-	To0 string `json:"to_0_"`
-	To1 string `json:"to_1_"`
-	To2 string `json:"to_2_"`
-	To3 string `json:"to_3_"`
-	To4 string `json:"to_4_"`
-	To5 string `json:"to_5_"`
+	To string `json:"to"`
+	Folder string `json:"folder"`
 }
 
 type EmailDTO struct {
@@ -60,6 +56,7 @@ type EmailDTO struct {
 }
 
 const STREAM = "enron"
+const QUERY_SIZE = 50
 // endpoint zincSearch para ingregar los datos
 const URL = "http://localhost:5080/api/default/_search"
 
@@ -79,11 +76,19 @@ func main(){
 	
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
+
+	//prod
+	staticHandler := http.FileServer(http.Dir("dist"))
+	r.Handle("/*", http.StripPrefix("/", staticHandler))
+
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		/*
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:8080")
 		w.WriteHeader(200)
-		w.Write([]byte("<h1>Go server working well!</h1>"))
+		*/
+		http.ServeFile(w, r, "dist\\index.html")
+		//http.ServeFile(w, r, "dist\\favicon.ico")
 	})
 
 	r.Get("/search/{input}", func (w http.ResponseWriter, r *http.Request)  {
@@ -97,7 +102,7 @@ func main(){
 		var query QueryObj
 		query.EndTime = currentTimeMicroseconds
 		query.From = 0
-		query.Size = 2
+		query.Size = QUERY_SIZE
 		query.Sql = fmt.Sprintf("SELECT * FROM %s WHERE match_all('%s')", STREAM, searchInput) // Manera de hacer la busqueda
 		query.SqlMode = "context"
 		query.StartTime = 0
@@ -173,12 +178,7 @@ func hitsToEmailDTO(hits []Email, results *[]EmailDTO){
 		result.Date = hit.Date
 		result.From = hit.From
 		result.Subject = hit.Subject
-		if (hit.To0 != "") {result.To = append(result.To, hit.To0)}
-		if (hit.To1 != "") {result.To = append(result.To, hit.To1)}
-		if (hit.To2 != "") {result.To = append(result.To, hit.To2)}
-		if (hit.To3 != "") {result.To = append(result.To, hit.To3)}
-		if (hit.To4 != "") {result.To = append(result.To, hit.To4)}
-		if (hit.To5 != "") {result.To = append(result.To, hit.To5)}
+		result.To = strings.Split(hit.To, ", ")
 
 		*results = append(*results, result)
 	}

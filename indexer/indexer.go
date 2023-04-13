@@ -186,7 +186,7 @@ func addMailToJson (mailFile *os.File, bulkJson *string) {
 	mailObjJson, err := json.Marshal(mailObj)
 	handleError(err)
 
-	*bulkJson += "{ \"index\" : { \"_index\" : \"enron_3\" } }\n"+string(mailObjJson)+"\n"
+	*bulkJson += "{ \"index\" : { \"_index\" : \"enron\" } }\n"+string(mailObjJson)+"\n"
 }
 
 func handleError (err error){
