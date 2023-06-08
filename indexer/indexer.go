@@ -1,7 +1,8 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
+	//"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -30,10 +31,10 @@ type MailObj struct {
 }
 
 // endpoint zincSearch para ingregar los datos
-const URL = "http://localhost:5080/api/default/_bulk"
+const URL = "http://localhost:4080/api/default/_bulk"
 
 // Credenciales zincSearch
-const USER = "donovan57ra@gmail.com"
+const USER = "admin"
 const PWD = "donovan#123"
 var authEncoded string
 
@@ -41,6 +42,10 @@ var authEncoded string
 //Directorios a analizar
 var ENRON_MAIL string
 var MAIL_DIR string
+
+//Formato de fecha
+// De acuerdo a la documentacion se debe usar esta fecha especifiamente para darle formato a la fecha
+const DATE_LAYOUT = "Mon, 2 Jan 2006 15:04:05 -0700 (MST)"
 
 //Para administrar las rutinas
 var waitGroup sync.WaitGroup
@@ -76,7 +81,8 @@ func main(){
 func indexAll(folders []fs.DirEntry){
 	for _,folder := range folders{
 		waitGroup.Add(1)
-		go folderRoutine(folder.Name()) // Se llama a una rutina por cada carpeta para que haga cada carpeta en una gorutine
+		folderRoutine(folder.Name())
+		//go folderRoutine(folder.Name()) // Se llama a una rutina por cada carpeta para que haga cada carpeta en una gorutine
 	}
 }
 
@@ -86,7 +92,7 @@ func folderRoutine(folderName string){
 
 	person := folderName
 	//Se la variable que se usará para ingresar la informacion
-	bulkJson := ""
+	bulkJson := bytes.NewBuffer(make([]byte, 0, 64*1024))
 
 	// Se recorren los archhivos de cada carpeta
 	err := filepath.WalkDir(filepath.Join(MAIL_DIR,person), func (path string, d fs.DirEntry, err error) error{
@@ -103,14 +109,15 @@ func folderRoutine(folderName string){
 			handleError(_err)
 			defer mailFile.Close()
 			
-			addMailToJson(mailFile, &bulkJson)
+			addMailToJson(mailFile, bulkJson)
 		}
 		return nil
 	})
 	handleError(err)
 	
+	
 	// Se crea la petición y como cuerpo de la petición el bulkJson
-	request, err := http.NewRequest("POST", URL, strings.NewReader(bulkJson))
+	request, err := http.NewRequest("POST", URL, strings.NewReader(bulkJson.String()))
 	handleError(err)
 	request.Header.Set("Authorization","Basic "+ authEncoded)
 	request.Header.Set("Content-Type", "application/json")
@@ -126,7 +133,74 @@ func folderRoutine(folderName string){
 	fmt.Println(string(body)+" "+folderName)
 }
 
-func addMailToJson (mailFile *os.File, bulkJson *string) {
+func addMailToJson (mailFile *os.File, bulkJson *bytes.Buffer) {
+	var mailObj MailObj
+	mailObj.From = ""
+	mailObj.To = ""
+	mailObj.Subject = ""
+	
+
+	content, err := io.ReadAll(mailFile)
+	handleError(err)
+
+	mailString := string(content)
+	mailParts := strings.SplitN(mailString, "\r\n\r\n", 2)
+
+	header := mailParts[0]
+	body := mailParts[1]
+
+	headerLines := strings.SplitN(header, "\r\n", -1)
+
+	// Comodines para clave valor de las lineas del header
+	var key string
+	var value string
+
+	headerLoop:
+	for _, line := range headerLines {
+		
+		lineSplited := strings.SplitN(line, ": ", 2)
+		
+		if (!strings.HasPrefix(lineSplited[0], "\t") && !strings.HasPrefix(lineSplited[0], " ") ) {
+			key = lineSplited[0]
+			value = lineSplited[1]
+		}else{
+			value = lineSplited[0]
+		}
+
+		
+        // Se asigna cada atributo respectivamente
+		switch(key){
+			case "Message-ID":
+				mailObj.Message_ID = value
+			case "Date":
+				mailObj.Date,_ = time.Parse(DATE_LAYOUT,value)
+			case "From":
+				mailObj.From += value
+			case "To":
+				mailObj.To += value
+			case "Subject":
+				mailObj.Subject += value
+			case "Mime-Version":
+				break headerLoop
+		}
+	}
+
+	mailObj.To = strings.ReplaceAll(mailObj.To,"\t","")
+	mailObj.Body = body
+	
+	// Get the absolute path of the file
+    absPath, err := filepath.Abs(mailFile.Name())
+    handleError(err)
+	mailObj.Folder = absPath
+
+	// Acá se transforma la structura mailObj a un objeto json para unirlo al json del stream
+	mailObjJson, err := json.Marshal(mailObj)
+	handleError(err)
+
+	_, err = bulkJson.WriteString("{ \"index\" : { \"_index\" : \"enron\" } }\n"+string(mailObjJson)+"\n")
+	handleError(err)
+	
+	/*
 	// Logica para agregar la informacion del mail al json
 	// Linea en la que acaba el header
 	headerEnd := false
@@ -138,6 +212,7 @@ func addMailToJson (mailFile *os.File, bulkJson *string) {
 	// Se incrementa el tamaño del buffer de cada linea
 	scanner.Buffer(make([]byte, 0, 64*1024),1024*1024) 
 
+	
 	lineNumber := 1 
 	body:=""
     for scanner.Scan() { // Se pueden poner etiquetas en el codigo que buen detalle
@@ -186,7 +261,10 @@ func addMailToJson (mailFile *os.File, bulkJson *string) {
 	mailObjJson, err := json.Marshal(mailObj)
 	handleError(err)
 
-	*bulkJson += "{ \"index\" : { \"_index\" : \"enron\" } }\n"+string(mailObjJson)+"\n"
+	_, err = bulkJson.WriteString("{ \"index\" : { \"_index\" : \"enron\" } }\n"+string(mailObjJson)+"\n")
+	handleError(err)
+
+	*/
 }
 
 func handleError (err error){
