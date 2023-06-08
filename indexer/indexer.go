@@ -31,11 +31,11 @@ type MailObj struct {
 }
 
 // endpoint zincSearch para ingregar los datos
-const URL = "http://localhost:4080/api/default/_bulk"
+const URL = "http://localhost:5080/api/default/enron2/_multi"
 
 // Credenciales zincSearch
-const USER = "admin"
-const PWD = "donovan#123"
+const USER = "root@example.com"
+const PWD = "Complexpass#123"
 var authEncoded string
 
 
@@ -95,7 +95,7 @@ func folderRoutine(folderName string){
 	//Se la variable que se usará para ingresar la informacion
 	var bulkJson strings.Builder
 
-	bulkJson.Grow(100000000)
+	//bulkJson.Grow(100000000)
 
 	// Se recorren los archhivos de cada carpeta
 	startTime = time.Now()
@@ -205,7 +205,8 @@ func addMailToJson (mailFile *os.File, bulkJson *strings.Builder) {
 	mailObjJson, err := json.Marshal(mailObj)
 	handleError(err)
 
-	_, err = bulkJson.WriteString("{ \"index\" : { \"_index\" : \"enron\" } }\n"+string(mailObjJson)+"\n")
+	//_, err = bulkJson.WriteString("{ \"index\" : { \"_index\" : \"enron\" } }\n"+string(mailObjJson)+"\n")
+	_, err = bulkJson.WriteString(string(mailObjJson)+"\n")
 	handleError(err)
 }
 

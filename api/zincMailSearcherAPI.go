@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	//"log"
 	"net/http"
 	"os"
 	"strings"
@@ -55,14 +55,14 @@ type EmailDTO struct {
 	Body				string
 }
 
-const STREAM = "enron"
+const STREAM = "enron2"
 const QUERY_SIZE = 50
 // endpoint zincSearch para ingregar los datos
 const URL = "http://localhost:5080/api/default/_search"
 
 // Credenciales zincSearch
-const USER = "donovan57ra@gmail.com"
-const PWD = "donovan#123"
+const USER = "root@example.com"
+const PWD = "Complexpass#123"
 var authEncoded string
 
 
@@ -76,6 +76,7 @@ func main(){
 	
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
+	r.Use(ErrorHandler)
 
 	//prod
 	staticHandler := http.FileServer(http.Dir("dist"))
@@ -98,6 +99,12 @@ func main(){
 		currentTimeMicroseconds := time.Now().UnixMicro()
 		// Se extrae el texto ingresado por el usuario y que desea buscar
 		searchInput := chi.URLParam(r, "input");
+		if (!isValidInput(searchInput)){
+			HandleError(w, r, fmt.Errorf("input de búsqueda inválido"))
+		}
+		escapeInput(&searchInput)
+
+
 		// Se define el objeto query mediante el cual se realiza la consulta
 		var query QueryObj
 		query.EndTime = currentTimeMicroseconds
@@ -109,20 +116,20 @@ func main(){
 		query.TrackTotalHits = false
 		
 		queryJson, err := json.Marshal(query)
-		handleError(err)
+		HandleError(w, r, err)
 		// Se estructura el cuerpo de la petición de la consulta 
 		searchBody := fmt.Sprintf("{\n\"query\": %s\n}", queryJson) 
-
+		
 
 		searchRequest, err := http.NewRequest("POST", URL, strings.NewReader(searchBody))
-		handleError(err)
+		HandleError(w, r, err)
 		searchRequest.Header.Set("Authorization","Basic "+ authEncoded)
 		searchRequest.Header.Set("Content-Type", "application/json")
 
 		// Se instancia el cliente y se hace la petición a través del cliente
 		client := &http.Client{}
 		response, err := client.Do(searchRequest)
-		handleError(err)
+		HandleError(w, r, err)
 		defer response.Body.Close()
 
 		// Se muestra la respuesta
@@ -133,7 +140,8 @@ func main(){
 
 		hitsToEmailDTO(responseObj.Hits, &results)
 		//fmt.Println(results)
-		resultsJson,_ := json.Marshal(results)
+		resultsJson, err:= json.Marshal(results)
+		HandleError(w, r, err)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:8080")
@@ -159,11 +167,49 @@ func configurePort(port *string){
 	}
 }
 
+func ErrorHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				// Devolver un error HTTP 500
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+		}()
 
+		next.ServeHTTP(w, r)
+	})
+}
 
-func handleError (err error){
-	if err!=nil{
-		log.Fatal(err)
+func HandleError(w http.ResponseWriter, r *http.Request, err error) {
+	if (err != nil){
+		// Registrar el error, enviar notificación, etc.
+		fmt.Println(err.Error())
+		// Devolver un error HTTP 500
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+	}
+}
+
+func isValidInput(input string) bool {
+	if ( len(input) > 1024){
+		return false
+	}
+
+	specialChars := []string{"!", "#", "$", "%", "&"}
+    for _, c := range specialChars {
+        if strings.Contains(input, c) {
+            return false
+        }
+    }
+    return true
+}
+
+func escapeInput(input *string){
+	escapeChars := []string{"'", "\"", "\\"}
+
+	escapeChar := "\\"
+
+	for _, c := range escapeChars {
+		*input = strings.ReplaceAll(*input, c, escapeChar+c)
 	}
 }
 
