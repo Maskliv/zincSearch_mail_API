@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	//"bytes"
 	//"bufio"
 	"encoding/base64"
 	"encoding/json"
@@ -81,20 +81,24 @@ func main(){
 func indexAll(folders []fs.DirEntry){
 	for _,folder := range folders{
 		waitGroup.Add(1)
-		folderRoutine(folder.Name())
-		//go folderRoutine(folder.Name()) // Se llama a una rutina por cada carpeta para que haga cada carpeta en una gorutine
+		go folderRoutine(folder.Name()) // Se llama a una rutina por cada carpeta para que haga cada carpeta en una gorutine
 	}
 }
 
 func folderRoutine(folderName string){
+	var startTime time.Time
+	var endTime time.Time
 	// para marcar que la rutina ha terminado cuando termine la ejecución de la función
 	defer waitGroup.Done()
 
 	person := folderName
 	//Se la variable que se usará para ingresar la informacion
-	bulkJson := bytes.NewBuffer(make([]byte, 0, 64*1024))
+	var bulkJson strings.Builder
+
+	bulkJson.Grow(100000000)
 
 	// Se recorren los archhivos de cada carpeta
+	startTime = time.Now()
 	err := filepath.WalkDir(filepath.Join(MAIL_DIR,person), func (path string, d fs.DirEntry, err error) error{
 		handleError(err)
 		// ya que la primera entrada de una funcion WalkDir es la ruta misma
@@ -109,10 +113,13 @@ func folderRoutine(folderName string){
 			handleError(_err)
 			defer mailFile.Close()
 			
-			addMailToJson(mailFile, bulkJson)
+			
+			addMailToJson(mailFile, &bulkJson)
+			
 		}
 		return nil
 	})
+	endTime = time.Now()
 	handleError(err)
 	
 	
@@ -130,10 +137,11 @@ func folderRoutine(folderName string){
 
 	// Se muestra la respuesta
 	body,_:= io.ReadAll(response.Body)
-	fmt.Println(string(body)+" "+folderName)
+	
+	fmt.Println(string(body)+" "+folderName+" time: "+endTime.Sub(startTime).String())
 }
 
-func addMailToJson (mailFile *os.File, bulkJson *bytes.Buffer) {
+func addMailToJson (mailFile *os.File, bulkJson *strings.Builder) {
 	var mailObj MailObj
 	mailObj.From = ""
 	mailObj.To = ""
@@ -199,72 +207,6 @@ func addMailToJson (mailFile *os.File, bulkJson *bytes.Buffer) {
 
 	_, err = bulkJson.WriteString("{ \"index\" : { \"_index\" : \"enron\" } }\n"+string(mailObjJson)+"\n")
 	handleError(err)
-	
-	/*
-	// Logica para agregar la informacion del mail al json
-	// Linea en la que acaba el header
-	headerEnd := false
-	//Se crea una estructura de datos para el mail
-	var mailObj MailObj
-	mailObj.To = ""
-	// Se crea un scanner para leer el string linea por linea
-	scanner := bufio.NewScanner(mailFile)
-	// Se incrementa el tamaño del buffer de cada linea
-	scanner.Buffer(make([]byte, 0, 64*1024),1024*1024) 
-
-	
-	lineNumber := 1 
-	body:=""
-    for scanner.Scan() { // Se pueden poner etiquetas en el codigo que buen detalle
-		if (headerEnd){
-			body += scanner.Text() + "\n"
-			continue
-		}
-
-        line := strings.Split(scanner.Text(), ": ")
-        // Se asigna cada atributo respectivamente
-		switch(line[0]){
-			case "Message-ID":
-				mailObj.Message_ID = line[1]
-			case "Date":
-				// De acuerdo a la documentacion se debe usar esta fecha especifiamente para darle formato a la fecha
-				layout := "Mon, 2 Jan 2006 15:04:05 -0700 (MST)"
-				mailObj.Date,_ = time.Parse(layout,line[1])
-			case "From":
-				mailObj.From = line[1]
-			case "To":
-				mailObj.To += line[1]
-			case "Subject":
-				mailObj.Subject = line[1]
-			case "X-FileName": // En el caso de este atributo se sabe que es el ultimo del header y por lo tanto la ultima linea del mismo
-				headerEnd = true
-		}
-		if strings.Contains(line[0], "@"){
-			mailObj.To += line[0]
-		}
-        lineNumber++
-    }
-
-	if err:=scanner.Err(); err!=nil{
-		log.Fatal(err)
-	}
-
-	mailObj.To = strings.ReplaceAll(mailObj.To,"\t","")
-	mailObj.Body = body
-
-	// Get the absolute path of the file
-    absPath, err := filepath.Abs(mailFile.Name())
-    handleError(err)
-	mailObj.Folder = absPath
-
-	// Acá se transforma la structura mailObj a un objeto json para unirlo al json del stream
-	mailObjJson, err := json.Marshal(mailObj)
-	handleError(err)
-
-	_, err = bulkJson.WriteString("{ \"index\" : { \"_index\" : \"enron\" } }\n"+string(mailObjJson)+"\n")
-	handleError(err)
-
-	*/
 }
 
 func handleError (err error){
